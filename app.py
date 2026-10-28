@@ -154,7 +154,7 @@ with tab_tra_cuu:
                             if not df_giao_po.empty:
                                 with st.container(border=True):
                                     st.markdown(f"**PO: {po}**")
-                                    df_giao_po["Ngày giao hàng"] = pd.to_datetime(df_giao_po["Ngày giao hàng"]).dt.strftime('%d/%m/%Y')
+                                    df_giao_po["Ngày giao hàng"] = pd.to_datetime(df_giao_po["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
                                     df_giao_po.insert(0, "Xóa", False)
                                     
                                     edited_df = st.data_editor(
@@ -174,7 +174,8 @@ with tab_tra_cuu:
                                     if not rows_to_delete.empty:
                                         if st.button(f"🗑️ Xác nhận xóa {len(rows_to_delete)} dòng của {po}", key=f"del_{ma_sp}_{po}", type="primary"):
                                             try:
-                                                wb = openpyxl.load_workbook(file_path)
+                                                # SỬ DỤNG data_only=True ĐỂ ĐỌC GIÁ TRỊ THAY VÌ CÔNG THỨC
+                                                wb = openpyxl.load_workbook(file_path, data_only=True)
                                                 ws = wb[cong_ty]
                                                 header_row = None
                                                 for i in range(1, 20):
@@ -184,9 +185,10 @@ with tab_tra_cuu:
                                                             break
                                                     if header_row: break
                                                 
+                                                deleted_count = 0
                                                 # Duyệt ngược từ dưới lên để xóa không bị lệch dòng
                                                 for idx, row in rows_to_delete.iloc[::-1].iterrows():
-                                                    target_ngay = row["Ngày giao hàng"]
+                                                    target_ngay = str(row["Ngày giao hàng"]).strip()
                                                     
                                                     # Ép kiểu an toàn cho Số lượng giao cần xóa
                                                     try:
@@ -199,31 +201,41 @@ with tab_tra_cuu:
                                                         val_ngay = ws.cell(row=r, column=4).value
                                                         val_sl = ws.cell(row=r, column=8).value
                                                         
-                                                        # Kiểm tra PO, Ngày và Số lượng có khớp không
-                                                        if str(val_po) == str(po) and pd.notna(val_ngay) and pd.notna(val_sl):
-                                                            try:
-                                                                date_str = val_ngay.strftime('%d/%m/%Y') if hasattr(val_ngay, 'strftime') else str(val_ngay)
-                                                                
-                                                                # CHUẨN HÓA DỮ LIỆU: Ép kiểu an toàn cho giá trị trong Excel để so sánh
-                                                                try:
-                                                                    current_sl = float(str(val_sl).strip().replace(',', ''))
-                                                                except:
-                                                                    current_sl = None
-                                                                
-                                                                # So sánh ngày và số lượng (nếu current_sl hợp lệ)
-                                                                if date_str == target_ngay and current_sl is not None and current_sl == target_sl:
-                                                                    ws.delete_rows(r, 1)
-                                                                    break # Đã xóa đúng dòng, thoát vòng lặp trong
-                                                            except Exception as inner_e:
-                                                                # Ghi log lỗi ra console để debug nếu cần, không chặn app
-                                                                print(f"Lỗi so sánh dòng {r}: {inner_e}")
+                                                        # Kiểm tra PO có khớp không
+                                                        if str(val_po) == str(po):
+                                                            # XỬ LÝ NGÀY THÁNG: Nếu trống (None) thì gán là "None"
+                                                            if pd.isna(val_ngay) or val_ngay is None:
+                                                                date_str = "None"
+                                                            elif hasattr(val_ngay, 'strftime'):
+                                                                date_str = val_ngay.strftime('%d/%m/%Y')
+                                                            else:
+                                                                date_str = str(val_ngay).strip()
+
+                                                            # Bỏ qua nếu ô số lượng chứa công thức (bắt đầu bằng dấu =)
+                                                            if isinstance(val_sl, str) and val_sl.startswith('='):
                                                                 continue
+
+                                                            # Ép kiểu số lượng an toàn
+                                                            try:
+                                                                current_sl = float(str(val_sl).strip().replace(',', '')) if pd.notna(val_sl) else None
+                                                            except:
+                                                                current_sl = None
+                                                            
+                                                            # So sánh: Nếu cả Ngày và Số lượng đều khớp thì xóa
+                                                            if date_str == target_ngay and current_sl is not None and current_sl == target_sl:
+                                                                ws.delete_rows(r, 1)
+                                                                deleted_count += 1
+                                                                break # Đã xóa đúng dòng, thoát vòng lặp trong
                                                                 
-                                                wb.save(file_path)
-                                                st.success("Đã xóa thành công!")
-                                                st.session_state.pop("all_sheets", None)
-                                                st.session_state.pop("visible_sheets", None)
-                                                st.rerun()
+                                                if deleted_count > 0:
+                                                    wb.save(file_path)
+                                                    st.success(f"Đã xóa thành công {deleted_count} dòng!")
+                                                    st.session_state.pop("all_sheets", None)
+                                                    st.session_state.pop("visible_sheets", None)
+                                                    st.rerun()
+                                                else:
+                                                    st.warning("Không tìm thấy dòng nào khớp để xóa. Có thể dữ liệu đã thay đổi hoặc chứa công thức.")
+                                                    
                                             except Exception as e:
                                                 st.error(f"Lỗi khi xóa: {e}")
 
