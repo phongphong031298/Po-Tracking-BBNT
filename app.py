@@ -128,6 +128,10 @@ with tab_tra_cuu:
                         df_po_display["Số lượng trên ĐH"] = pd.to_numeric(df_po_display["Số lượng trên ĐH"], errors='coerce').fillna(0)
                         df_po_display["SL Đã Giao"] = df_po_display["Số PO"].map(tong_giao_dict).fillna(0)
                         df_po_display["Còn Lại"] = df_po_display["Số lượng trên ĐH"] - df_po_display["SL Đã Giao"]
+                        # Tự động đánh dấu Done khi đã giao đủ hoặc dư so với ĐH
+                        da_xong = (df_po_display["Số lượng trên ĐH"] > 0) & (df_po_display["Còn Lại"] <= 0)
+                        df_po_display["Hoàn thành"] = df_po_display["Hoàn thành"].astype(object)
+                        df_po_display.loc[da_xong, "Hoàn thành"] = "Done"
                         df_po_display["Ngày giao hàng"] = pd.to_datetime(df_po_display["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
                         
                         st.dataframe(
