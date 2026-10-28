@@ -184,21 +184,41 @@ with tab_tra_cuu:
                                                             break
                                                     if header_row: break
                                                 
+                                                # Duyệt ngược từ dưới lên để xóa không bị lệch dòng
                                                 for idx, row in rows_to_delete.iloc[::-1].iterrows():
                                                     target_ngay = row["Ngày giao hàng"]
-                                                    target_sl = row["Số lượng giao"]
+                                                    
+                                                    # Ép kiểu an toàn cho Số lượng giao cần xóa
+                                                    try:
+                                                        target_sl = float(row["Số lượng giao"])
+                                                    except:
+                                                        continue 
+                                                        
                                                     for r in range(ws.max_row, header_row, -1):
                                                         val_po = ws.cell(row=r, column=5).value
                                                         val_ngay = ws.cell(row=r, column=4).value
                                                         val_sl = ws.cell(row=r, column=8).value
+                                                        
+                                                        # Kiểm tra PO, Ngày và Số lượng có khớp không
                                                         if str(val_po) == str(po) and pd.notna(val_ngay) and pd.notna(val_sl):
                                                             try:
-                                                                date_str = val_ngay.strftime('%d/%m/%Y')
-                                                            except:
-                                                                date_str = str(val_ngay)
-                                                            if date_str == target_ngay and float(val_sl) == float(target_sl):
-                                                                ws.delete_rows(r, 1)
-                                                                break
+                                                                date_str = val_ngay.strftime('%d/%m/%Y') if hasattr(val_ngay, 'strftime') else str(val_ngay)
+                                                                
+                                                                # CHUẨN HÓA DỮ LIỆU: Ép kiểu an toàn cho giá trị trong Excel để so sánh
+                                                                try:
+                                                                    current_sl = float(str(val_sl).strip().replace(',', ''))
+                                                                except:
+                                                                    current_sl = None
+                                                                
+                                                                # So sánh ngày và số lượng (nếu current_sl hợp lệ)
+                                                                if date_str == target_ngay and current_sl is not None and current_sl == target_sl:
+                                                                    ws.delete_rows(r, 1)
+                                                                    break # Đã xóa đúng dòng, thoát vòng lặp trong
+                                                            except Exception as inner_e:
+                                                                # Ghi log lỗi ra console để debug nếu cần, không chặn app
+                                                                print(f"Lỗi so sánh dòng {r}: {inner_e}")
+                                                                continue
+                                                                
                                                 wb.save(file_path)
                                                 st.success("Đã xóa thành công!")
                                                 st.session_state.pop("all_sheets", None)
