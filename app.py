@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Tra cứu & Nhập liệu (Thêm cột Còn lại, Format ngày VN)
+PO Tracking App - Tra cứu, Nhập liệu & Lọc lịch sử giao hàng theo Ngày
 """
 import streamlit as st
 import pandas as pd
@@ -8,6 +8,7 @@ from datetime import datetime, date
 from pathlib import Path
 import data_manager as dm
 import openpyxl
+import os
 
 # Cấu hình trang
 st.set_page_config(
@@ -16,7 +17,18 @@ st.set_page_config(
     layout="wide",
 )
 
-DEFAULT_FILE = "data/theo_doi_po.xlsx"
+# =========================================================
+# TỰ ĐỘNG TÌM FILE EXCEL MẶC ĐỊNH
+# =========================================================
+DEFAULT_FILE = "Theo dõi PO - BBNT.xlsx"
+if not os.path.exists(DEFAULT_FILE):
+    if os.path.exists("data/Theo dõi PO - BBNT.xlsx"):
+        DEFAULT_FILE = "data/Theo dõi PO - BBNT.xlsx"
+    else:
+        for f in os.listdir("."):
+            if f.endswith(".xlsx") and not f.endswith(".bak.xlsx"):
+                DEFAULT_FILE = f
+                break
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
@@ -25,7 +37,7 @@ if "file_path" not in st.session_state:
 # SIDEBAR
 # =========================================================
 st.sidebar.header("⚙️ Cấu hình dữ liệu")
-uploaded = st.sidebar.file_uploader("Tải file Excel theo dõi PO", type=["xlsx"])
+uploaded = st.sidebar.file_uploader("Tải file Excel khác (nếu muốn)", type=["xlsx"])
 
 if uploaded:
     save_path = Path("data") / uploaded.name
@@ -37,6 +49,7 @@ if uploaded:
     st.session_state.pop("all_sheets", None)
 
 file_path = st.session_state.file_path
+
 if not Path(file_path).exists():
     st.warning("Chưa có file dữ liệu. Hãy tải file Excel lên.")
     st.stop()
@@ -54,10 +67,14 @@ visible_sheets = st.session_state.visible_sheets
 # =========================================================
 # TABS
 # =========================================================
-tab_tra_cuu, tab_tong_hop = st.tabs(["🔍 Tra cứu & Nhập liệu", "📊 Tổng hợp KPI"])
+tab_tra_cuu, tab_loc_ngay, tab_tong_hop = st.tabs([
+    "🔍 Tra cứu & Nhập liệu", 
+    "📅 Lịch sử giao hàng theo Ngày", 
+    "📊 Tổng hợp KPI"
+])
 
 # ---------------------------------------------------------
-# TAB 1: TRA CỨU & NHẬP LIỆU
+# TAB 1: TRA CỨU & NHẬP LIỆU (Giữ nguyên)
 # ---------------------------------------------------------
 with tab_tra_cuu:
     st.header("🔍 Tra cứu & Nhập liệu theo Công ty")
@@ -92,35 +109,22 @@ with tab_tra_cuu:
                 df_detail = df_company[df_company["Mã SP"] == ma_sp]
                 
                 with st.expander(f"📦 {ma_sp} — {ten_sp}", expanded=False):
-                    
-                    # Lấy danh sách các PO hiện có
                     df_po = df_detail[df_detail["Phân loại"].astype(str).str.strip() == "-"].copy()
                     list_po = df_po["Số PO"].dropna().astype(str).unique().tolist()
                     
-                    # ---------------------------------------------
-                    # HIỂN THỊ THÔNG TIN PO (Có tính Còn lại)
-                    # ---------------------------------------------
+                    # Bảng Thông tin PO
                     if not df_po.empty:
                         st.markdown("**📌 Thông tin Đơn hàng (PO):**")
-                        
-                        # Lấy dữ liệu giao hàng để tính tổng đã giao theo từng PO
                         df_giao_all = df_detail[
                             (df_detail["Phân loại"].astype(str).str.strip() != "SI") & 
                             (df_detail["Phân loại"].astype(str).str.strip() != "-")
                         ].copy()
                         
-                        # Tính tổng SL giao cho từng PO
                         tong_giao_dict = df_giao_all.groupby("Số PO")["Số lượng giao"].sum().to_dict()
-                        
                         df_po_display = df_po.copy()
-                        # Đảm bảo cột số lượng là dạng số
                         df_po_display["Số lượng trên ĐH"] = pd.to_numeric(df_po_display["Số lượng trên ĐH"], errors='coerce').fillna(0)
-                        
-                        # Tính cột Còn lại
                         df_po_display["SL Đã Giao"] = df_po_display["Số PO"].map(tong_giao_dict).fillna(0)
                         df_po_display["Còn Lại"] = df_po_display["Số lượng trên ĐH"] - df_po_display["SL Đã Giao"]
-                        
-                        # Định dạng lại ngày tháng VN
                         df_po_display["Ngày giao hàng"] = pd.to_datetime(df_po_display["Ngày giao hàng"]).dt.strftime('%d/%m/%Y')
                         
                         st.dataframe(
@@ -134,26 +138,17 @@ with tab_tra_cuu:
                             }
                         )
                     
-                    # ---------------------------------------------
-                    # LỊCH SỬ GIAO HÀNG (CHIA KHỐI THEO TỪNG PO)
-                    # ---------------------------------------------
+                    # Lịch sử giao hàng (chia khối)
                     st.markdown("**🚚 Lịch sử Giao hàng (Xóa nếu nhập sai):**")
-                    
                     if df_giao_all.empty:
                         st.info("Chưa có đợt giao hàng nào.")
                     else:
-                        # Duyệt từng PO để hiển thị thành từng khối riêng biệt
                         for po in list_po:
                             df_giao_po = df_giao_all[df_giao_all["Số PO"].astype(str) == str(po)].copy()
-                            
                             if not df_giao_po.empty:
                                 with st.container(border=True):
                                     st.markdown(f"**PO: {po}**")
-                                    
-                                    # Định dạng ngày tháng
                                     df_giao_po["Ngày giao hàng"] = pd.to_datetime(df_giao_po["Ngày giao hàng"]).dt.strftime('%d/%m/%Y')
-                                    
-                                    # Tạo cột Xóa
                                     df_giao_po.insert(0, "Xóa", False)
                                     
                                     edited_df = st.data_editor(
@@ -169,14 +164,12 @@ with tab_tra_cuu:
                                         key=f"editor_{ma_sp}_{po}"
                                     )
                                     
-                                    # Nút xóa cho PO này
                                     rows_to_delete = edited_df[edited_df["Xóa"] == True]
                                     if not rows_to_delete.empty:
                                         if st.button(f"🗑️ Xác nhận xóa {len(rows_to_delete)} dòng của {po}", key=f"del_{ma_sp}_{po}", type="primary"):
                                             try:
                                                 wb = openpyxl.load_workbook(file_path)
                                                 ws = wb[cong_ty]
-                                                
                                                 header_row = None
                                                 for i in range(1, 20):
                                                     for j in range(1, ws.max_column + 1):
@@ -188,22 +181,18 @@ with tab_tra_cuu:
                                                 for idx, row in rows_to_delete.iloc[::-1].iterrows():
                                                     target_ngay = row["Ngày giao hàng"]
                                                     target_sl = row["Số lượng giao"]
-                                                    
                                                     for r in range(ws.max_row, header_row, -1):
                                                         val_po = ws.cell(row=r, column=5).value
                                                         val_ngay = ws.cell(row=r, column=4).value
                                                         val_sl = ws.cell(row=r, column=8).value
-                                                        
                                                         if str(val_po) == str(po) and pd.notna(val_ngay) and pd.notna(val_sl):
                                                             try:
                                                                 date_str = val_ngay.strftime('%d/%m/%Y')
                                                             except:
                                                                 date_str = str(val_ngay)
-                                                                
                                                             if date_str == target_ngay and float(val_sl) == float(target_sl):
                                                                 ws.delete_rows(r, 1)
                                                                 break
-                                                
                                                 wb.save(file_path)
                                                 st.success("Đã xóa thành công!")
                                                 st.session_state.pop("all_sheets", None)
@@ -214,11 +203,8 @@ with tab_tra_cuu:
 
                     st.divider()
                     
-                    # ---------------------------------------------
-                    # FORM NHẬP LIỆU
-                    # ---------------------------------------------
+                    # Form nhập liệu
                     col_tao_po, col_giao_hang = st.columns(2)
-                    
                     with col_tao_po:
                         st.markdown("**📝 Tạo PO Mới**")
                         with st.form(key=f"form_po_{ma_sp}"):
@@ -279,12 +265,76 @@ with tab_tra_cuu:
                                             st.rerun()
                                         except Exception as e:
                                             st.error(f"Lỗi: {e}")
-
     else:
         st.warning(f"Sheet **{cong_ty}** không có cấu trúc đơn hàng hoặc đang trống.")
 
+
 # ---------------------------------------------------------
-# TAB 2: TỔNG HỢP
+# TAB 2: LỊCH SỬ GIAO HÀNG THEO NGÀY (TÍNH NĂNG MỚI)
+# ---------------------------------------------------------
+with tab_loc_ngay:
+    st.header("📅 Tra cứu Lịch sử Giao hàng theo Ngày")
+    st.write("Chọn một ngày để xem bạn đã giao những Mã SP và PO nào trong ngày hôm đó.")
+    
+    # Ô chọn ngày
+    ngay_loc = st.date_input("Chọn ngày cần tra cứu", value=date.today(), format="DD/MM/YYYY")
+    ngay_loc_str = ngay_loc.strftime('%d/%m/%Y')
+    
+    # Quét toàn bộ dữ liệu để tìm các dòng giao hàng trong ngày
+    frames_giao_hang = []
+    for sheet_name, df in all_data.items():
+        if isinstance(df, pd.DataFrame) and "Ngày giao hàng" in df.columns:
+            # Chỉ lấy các dòng giao hàng (không phải SI, không phải -)
+            df_giao = df[
+                (df["Phân loại"].astype(str).str.strip() != "SI") & 
+                (df["Phân loại"].astype(str).str.strip() != "-")
+            ].copy()
+            
+            if not df_giao.empty:
+                # Ép kiểu ngày tháng để so sánh
+                df_giao["Ngày_str"] = pd.to_datetime(df_giao["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
+                # Lọc theo ngày
+                df_giao_loc = df_giao[df_giao["Ngày_str"] == ngay_loc_str]
+                
+                if not df_giao_loc.empty:
+                    df_giao_loc["_sheet"] = sheet_name
+                    frames_giao_hang.append(df_giao_loc)
+    
+    # Hiển thị kết quả
+    if not frames_giao_hang:
+        st.info(f"Không có đợt giao hàng nào vào ngày {ngay_loc_str}.")
+    else:
+        df_ket_qua = pd.concat(frames_giao_hang, ignore_index=True)
+        
+        # Làm gọn bảng kết quả
+        df_ket_qua = df_ket_qua[["_sheet", "Mã SP", "Tên SP (PO)", "Số PO", "Số lượng giao", "Ghi chú"]]
+        df_ket_qua.rename(columns={"_sheet": "Công ty"}, inplace=True)
+        
+        st.success(f"Tìm thấy **{len(df_ket_qua)}** đợt giao hàng vào ngày {ngay_loc_str}.")
+        st.dataframe(
+            df_ket_qua,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d"),
+            }
+        )
+        
+        # Tính tổng kết
+        st.markdown("---")
+        st.markdown("**📊 Tổng kết trong ngày:**")
+        tong_sp = df_ket_qua["Mã SP"].nunique()
+        tong_po = df_ket_qua["Số PO"].nunique()
+        tong_sl = df_ket_qua["Số lượng giao"].sum()
+        
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Số Mã SP đã giao", tong_sp)
+        c2.metric("Số PO đã giao", tong_po)
+        c3.metric("Tổng SL đã giao", f"{tong_sl:,.0f}")
+
+
+# ---------------------------------------------------------
+# TAB 3: TỔNG HỢP KPI
 # ---------------------------------------------------------
 with tab_tong_hop:
     st.header("📊 Báo cáo Tổng hợp")
