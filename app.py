@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Tra cứu, Nhập liệu & Lọc lịch sử giao hàng theo Ngày
+PO Tracking App - Tra cứu, Nhập liệu & Lọc lịch sử
 """
 import streamlit as st
 import pandas as pd
@@ -18,17 +18,9 @@ st.set_page_config(
 )
 
 # =========================================================
-# TỰ ĐỘNG TÌM FILE EXCEL MẶC ĐỊNH
+# CẤU HÌNH FILE MẶC ĐỊNH (Theo yêu cầu)
 # =========================================================
 DEFAULT_FILE = "data/theo_doi_po.xlsx"
-if not os.path.exists(DEFAULT_FILE):
-    if os.path.exists("data/Theo dõi PO - BBNT.xlsx"):
-        DEFAULT_FILE = "data/Theo dõi PO - BBNT.xlsx"
-    else:
-        for f in os.listdir("."):
-            if f.endswith(".xlsx") and not f.endswith(".bak.xlsx"):
-                DEFAULT_FILE = f
-                break
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
@@ -51,10 +43,11 @@ if uploaded:
 file_path = st.session_state.file_path
 
 if not Path(file_path).exists():
-    st.warning("Chưa có file dữ liệu. Hãy tải file Excel lên.")
+    st.error(f"Không tìm thấy file dữ liệu tại: {file_path}")
+    st.info("Vui lòng upload file Excel ở thanh bên trái để bắt đầu.")
     st.stop()
 
-st.sidebar.info(f"📁 File: **{Path(file_path).name}**")
+st.sidebar.info(f"📁 File đang dùng: **{Path(file_path).name}**")
 
 if "all_sheets" not in st.session_state:
     with st.spinner("Đang tải dữ liệu..."):
@@ -74,7 +67,7 @@ tab_tra_cuu, tab_loc_ngay, tab_tong_hop = st.tabs([
 ])
 
 # ---------------------------------------------------------
-# TAB 1: TRA CỨU & NHẬP LIỆU (Giữ nguyên)
+# TAB 1: TRA CỨU & NHẬP LIỆU
 # ---------------------------------------------------------
 with tab_tra_cuu:
     st.header("🔍 Tra cứu & Nhập liệu theo Công ty")
@@ -112,7 +105,6 @@ with tab_tra_cuu:
                     df_po = df_detail[df_detail["Phân loại"].astype(str).str.strip() == "-"].copy()
                     list_po = df_po["Số PO"].dropna().astype(str).unique().tolist()
                     
-                    # Bảng Thông tin PO
                     if not df_po.empty:
                         st.markdown("**📌 Thông tin Đơn hàng (PO):**")
                         df_giao_all = df_detail[
@@ -138,7 +130,6 @@ with tab_tra_cuu:
                             }
                         )
                     
-                    # Lịch sử giao hàng (chia khối)
                     st.markdown("**🚚 Lịch sử Giao hàng (Xóa nếu nhập sai):**")
                     if df_giao_all.empty:
                         st.info("Chưa có đợt giao hàng nào.")
@@ -203,7 +194,6 @@ with tab_tra_cuu:
 
                     st.divider()
                     
-                    # Form nhập liệu
                     col_tao_po, col_giao_hang = st.columns(2)
                     with col_tao_po:
                         st.markdown("**📝 Tạo PO Mới**")
@@ -270,43 +260,44 @@ with tab_tra_cuu:
 
 
 # ---------------------------------------------------------
-# TAB 2: LỊCH SỬ GIAO HÀNG THEO NGÀY (TÍNH NĂNG MỚI)
+# TAB 2: LỊCH SỬ GIAO HÀNG THEO NGÀY
 # ---------------------------------------------------------
 with tab_loc_ngay:
     st.header("📅 Tra cứu Lịch sử Giao hàng theo Ngày")
-    st.write("Chọn một ngày để xem bạn đã giao những Mã SP và PO nào trong ngày hôm đó.")
     
-    # Ô chọn ngày
-    ngay_loc = st.date_input("Chọn ngày cần tra cứu", value=date.today(), format="DD/MM/YYYY")
-    ngay_loc_str = ngay_loc.strftime('%d/%m/%Y')
+    col_loc_ngay, col_loc_cong_ty = st.columns(2)
     
-    # Quét toàn bộ dữ liệu để tìm các dòng giao hàng trong ngày
+    with col_loc_ngay:
+        ngay_loc = st.date_input("1. Chọn ngày cần tra cứu", value=date.today(), format="DD/MM/YYYY")
+        ngay_loc_str = ngay_loc.strftime('%d/%m/%Y')
+        
+    with col_loc_cong_ty:
+        list_cong_ty_loc = ["Tất cả"] + visible_sheets
+        cong_ty_loc = st.selectbox("2. Lọc theo Công ty", list_cong_ty_loc)
+    
     frames_giao_hang = []
     for sheet_name, df in all_data.items():
+        if cong_ty_loc != "Tất cả" and sheet_name != cong_ty_loc:
+            continue
+            
         if isinstance(df, pd.DataFrame) and "Ngày giao hàng" in df.columns:
-            # Chỉ lấy các dòng giao hàng (không phải SI, không phải -)
             df_giao = df[
                 (df["Phân loại"].astype(str).str.strip() != "SI") & 
                 (df["Phân loại"].astype(str).str.strip() != "-")
             ].copy()
             
             if not df_giao.empty:
-                # Ép kiểu ngày tháng để so sánh
                 df_giao["Ngày_str"] = pd.to_datetime(df_giao["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
-                # Lọc theo ngày
                 df_giao_loc = df_giao[df_giao["Ngày_str"] == ngay_loc_str]
                 
                 if not df_giao_loc.empty:
                     df_giao_loc["_sheet"] = sheet_name
                     frames_giao_hang.append(df_giao_loc)
     
-    # Hiển thị kết quả
     if not frames_giao_hang:
-        st.info(f"Không có đợt giao hàng nào vào ngày {ngay_loc_str}.")
+        st.info(f"Không có đợt giao hàng nào vào ngày {ngay_loc_str} (Công ty: {cong_ty_loc}).")
     else:
         df_ket_qua = pd.concat(frames_giao_hang, ignore_index=True)
-        
-        # Làm gọn bảng kết quả
         df_ket_qua = df_ket_qua[["_sheet", "Mã SP", "Tên SP (PO)", "Số PO", "Số lượng giao", "Ghi chú"]]
         df_ket_qua.rename(columns={"_sheet": "Công ty"}, inplace=True)
         
@@ -320,7 +311,6 @@ with tab_loc_ngay:
             }
         )
         
-        # Tính tổng kết
         st.markdown("---")
         st.markdown("**📊 Tổng kết trong ngày:**")
         tong_sp = df_ket_qua["Mã SP"].nunique()
