@@ -309,6 +309,70 @@ def append_delivery(
 
     wb.save(file_path)
     return new_row
+
+def delete_po(file_path: str, sheet_name: str, ma_sp: str, so_po: str) -> int:
+    """
+    Xóa 1 PO: dòng thông tin đơn hàng (Phân loại "-") và toàn bộ các dòng
+    giao hàng của PO đó (cùng Mã SP + Số PO).
+    Chỉ XÓA NỘI DUNG các ô (giữ nguyên dòng) để không làm lệch các công thức
+    =SUM(...) và vùng bảng Excel của những PO khác.
+    Trả về số dòng đã xóa.
+    """
+    visible = get_visible_sheets(file_path)
+    if sheet_name not in visible:
+        raise ValueError(f"Sheet '{sheet_name}' đang bị ẩn hoặc không tồn tại.")
+
+    backup = Path(file_path).with_suffix(".bak.xlsx")
+    shutil.copy(file_path, backup)
+
+    wb = openpyxl.load_workbook(file_path)  # KHÔNG dùng data_only để giữ công thức
+    ws = wb[sheet_name]
+
+    header_row = None
+    for i in range(1, 20):
+        for j in range(1, ws.max_column + 1):
+            val = ws.cell(row=i, column=j).value
+            if val and "Số PO" in str(val):
+                header_row = i
+                break
+        if header_row:
+            break
+    if header_row is None:
+        raise ValueError(f"Không tìm thấy cột 'Số PO' trong sheet '{sheet_name}'")
+
+    col_ma_sp = col_po = None
+    for j in range(1, ws.max_column + 1):
+        v = ws.cell(row=header_row, column=j).value
+        if not v:
+            continue
+        v = str(v).strip()
+        if v == "Mã SP" and col_ma_sp is None:
+            col_ma_sp = j
+        if v == "Số PO" and col_po is None:
+            col_po = j
+    if col_ma_sp is None or col_po is None:
+        raise ValueError("Không tìm thấy cột 'Mã SP' hoặc 'Số PO'")
+
+    target_po = str(so_po).strip().upper()
+    target_sp = str(ma_sp).strip().upper()
+
+    count = 0
+    for r in range(header_row + 1, ws.max_row + 1):
+        po_val = ws.cell(row=r, column=col_po).value
+        sp_val = ws.cell(row=r, column=col_ma_sp).value
+        if po_val is None or sp_val is None:
+            continue
+        if str(po_val).strip().upper() == target_po and str(sp_val).strip().upper() == target_sp:
+            for j in range(1, ws.max_column + 1):
+                ws.cell(row=r, column=j).value = None
+            count += 1
+
+    if count == 0:
+        raise ValueError(f"Không tìm thấy PO '{so_po}' của mã '{ma_sp}'.")
+
+    wb.save(file_path)
+    return count
+
 def delete_row_by_index(file_path: str, sheet_name: str, row_index: int):
     """
     Xóa 1 dòng trong Excel theo index (index này là index thực tế của dòng trong file Excel, bắt đầu từ 1).

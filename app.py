@@ -144,6 +144,22 @@ with tab_tra_cuu:
                                 "Còn Lại": st.column_config.NumberColumn("Còn lại", format="%d"),
                             }
                         )
+
+                        with st.expander("🗑️ Xóa PO"):
+                            po_xoa = st.selectbox("Chọn PO cần xóa", list_po, key=f"xoapo_{ma_sp}")
+                            xac_nhan_xoa = st.checkbox(
+                                f"Tôi xác nhận xóa PO {po_xoa} cùng toàn bộ đợt giao hàng của PO này",
+                                key=f"xacnhan_xoapo_{ma_sp}"
+                            )
+                            if st.button("🗑️ Xóa PO", key=f"btn_xoapo_{ma_sp}", type="primary", disabled=not xac_nhan_xoa):
+                                try:
+                                    so_dong = dm.delete_po(file_path, cong_ty, ma_sp, po_xoa)
+                                    st.success(f"✅ Đã xóa PO {po_xoa} ({so_dong} dòng).")
+                                    st.session_state.pop("all_sheets", None)
+                                    st.session_state.pop("visible_sheets", None)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Lỗi khi xóa PO: {e}")
                     
                     st.markdown("**🚚 Lịch sử Giao hàng (Xóa nếu nhập sai):**")
                     if df_giao_all.empty:
@@ -175,7 +191,7 @@ with tab_tra_cuu:
                                     if not rows_to_delete.empty:
                                         if st.button(f"🗑️ Xác nhận xóa {len(rows_to_delete)} dòng của {po}", key=f"del_{ma_sp}_{po}", type="primary"):
                                             try:
-                                                wb = openpyxl.load_workbook(file_path, data_only=True)
+                                                wb = openpyxl.load_workbook(file_path)
                                                 ws = wb[cong_ty]
                                                 header_row = None
                                                 for i in range(1, 20):
