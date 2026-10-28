@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# CẤU HÌNH FILE MẶC ĐỊNH (Theo yêu cầu)
+# CẤU HÌNH FILE MẶC ĐỊNH
 # =========================================================
 DEFAULT_FILE = "data/theo_doi_po.xlsx"
 
@@ -76,13 +76,14 @@ with tab_tra_cuu:
     with col1:
         cong_ty = st.selectbox("Chọn Công ty (Sheet)", visible_sheets)
     with col2:
-        search_kw = st.text_input("Lọc nhanh Mã SP / Tên SP", placeholder="VD: K500, K305...")
+        search_kw = st.text_input("Lọc nhanh Mã SP / Tên SP", placeholder="Gõ để tìm...")
 
     df_company = all_data.get(cong_ty)
     
     if isinstance(df_company, pd.DataFrame) and not df_company.empty and "Mã SP" in df_company.columns:
         df_si = df_company[df_company["Phân loại"].astype(str).str.strip() == "SI"].copy()
         
+        # Lọc theo từ khóa tìm kiếm trước
         if search_kw:
             mask = (
                 df_si["Mã SP"].astype(str).str.contains(search_kw, case=False, na=False)
@@ -91,9 +92,23 @@ with tab_tra_cuu:
             df_si = df_si[mask]
 
         if df_si.empty:
-            st.info("Không tìm thấy Mã SP nào phù hợp.")
+            st.info("Không tìm thấy Mã SP nào phù hợp với từ khóa.")
         else:
-            st.write(f"Tìm thấy **{len(df_si)}** mã sản phẩm. Bấm vào mã để xem và nhập liệu:")
+            # Tạo danh sách các Mã SP để đưa vào bộ lọc
+            list_ma_sp_hien_thi = df_si["Mã SP"].dropna().astype(str).tolist()
+            
+            # THÊM BỘ LỌC MULTISELECT
+            cac_ma_sp_chon = st.multiselect(
+                "🎯 Hoặc chọn trực tiếp các Mã SP muốn xem (Bỏ trống để xem tất cả):",
+                options=list_ma_sp_hien_thi,
+                default=[]
+            )
+            
+            # Nếu người dùng có chọn mã cụ thể, lọc lại danh sách
+            if cac_ma_sp_chon:
+                df_si = df_si[df_si["Mã SP"].astype(str).isin(cac_ma_sp_chon)]
+                
+            st.write(f"Đang hiển thị **{len(df_si)}** mã sản phẩm. Bấm vào để xem và nhập liệu:")
             
             for _, row_sp in df_si.iterrows():
                 ma_sp = row_sp["Mã SP"]
