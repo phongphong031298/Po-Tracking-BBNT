@@ -16,7 +16,7 @@ st.set_page_config(
     layout="wide",
 )
 
-DEFAULT_FILE = "data/Theo dõi PO - BBNT.xlsx"
+DEFAULT_FILE = "data/theo_doi_po.xlsx"
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
