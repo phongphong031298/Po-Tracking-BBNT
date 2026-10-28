@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Bản fix lỗi hoàn toàn
+PO Tracking App - Bản fix lỗi 100% (Ép kiểu Văn bản)
 """
 import streamlit as st
 import pandas as pd
@@ -142,7 +142,7 @@ with tab_tra_cuu:
                             }
                         )
                     
-                    st.markdown("**🚚 Lịch sử Giao hàng (Có thể sửa trực tiếp):**")
+                    st.markdown("**🚚 Lịch sử Giao hàng (Sửa trực tiếp):**")
                     if df_giao_all.empty:
                         st.info("Chưa có đợt giao hàng nào.")
                     else:
@@ -151,24 +151,22 @@ with tab_tra_cuu:
                             if not df_giao_po.empty:
                                 st.markdown(f"**PO: {po}**")
                                 
-                                df_edit = df_giao_po.copy()
-                                
-                                # CHỐNG LỖI: Chuyển ngày thành chuỗi, nếu lỗi thì để trống
-                                df_edit["Ngày giao hàng"] = pd.to_datetime(df_edit["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
-                                df_edit["Ngày giao hàng"] = df_edit["Ngày giao hàng"].fillna("") 
-                                
-                                df_edit["Số lượng giao"] = pd.to_numeric(df_edit["Số lượng giao"], errors='coerce').fillna(0)
-                                df_edit.insert(0, "Xóa", False)
+                                # ÉP TẤT CẢ SANG STRING ĐỂ TRÁNH LỖI DATA_EDITOR
+                                df_edit = pd.DataFrame()
+                                df_edit["Xóa"] = False
+                                df_edit["Ngày giao hàng"] = pd.to_datetime(df_giao_po["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y').fillna("").astype(str)
+                                df_edit["Số lượng giao"] = df_giao_po["Số lượng giao"].fillna(0).astype(str)
+                                df_edit["Ghi chú"] = df_giao_po["Ghi chú"].fillna("").astype(str)
                                 
                                 safe_key = clean_key(f"{ma_sp}_{po}")
                                 
-                                # CHUYỂN VỀ TEXT ĐỂ TRÁNH LỖI API CỦA STREAMLIT CLOUD
+                                # TẤT CẢ ĐỀU LÀ TEXTCOLUMN
                                 edited_df = st.data_editor(
-                                    df_edit[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
+                                    df_edit,
                                     column_config={
                                         "Xóa": st.column_config.CheckboxColumn("Xóa?", default=False),
                                         "Ngày giao hàng": st.column_config.TextColumn("Ngày giao (DD/MM/YYYY)"),
-                                        "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d"),
+                                        "Số lượng giao": st.column_config.TextColumn("SL Giao"),
                                         "Ghi chú": st.column_config.TextColumn("Ghi chú"),
                                     },
                                     hide_index=True,
@@ -190,9 +188,11 @@ with tab_tra_cuu:
                                             if header_row: break
                                         
                                         for idx, row in edited_df.iloc[::-1].iterrows():
+                                            old_row = df_edit.iloc[idx]
+                                            
                                             if row["Xóa"]:
-                                                target_ngay_old = df_edit.loc[idx, "Ngày giao hàng"]
-                                                target_sl_old = df_edit.loc[idx, "Số lượng giao"]
+                                                target_ngay_old = old_row["Ngày giao hàng"]
+                                                target_sl_old = old_row["Số lượng giao"]
                                                 for r in range(ws.max_row, header_row, -1):
                                                     val_po = ws.cell(row=r, column=5).value
                                                     val_ngay = ws.cell(row=r, column=4).value
@@ -203,17 +203,20 @@ with tab_tra_cuu:
                                                         except: 
                                                             date_str = str(val_ngay)
                                                         
-                                                        if date_str == target_ngay_old and float(val_sl) == float(target_sl_old):
+                                                        try: sl_str = str(int(float(val_sl)))
+                                                        except: sl_str = str(val_sl)
+
+                                                        if date_str == target_ngay_old and sl_str == target_sl_old:
                                                             ws.delete_rows(r, 1)
                                                             break
                                             else:
-                                                target_ngay_old = df_edit.loc[idx, "Ngày giao hàng"]
-                                                target_sl_old = df_edit.loc[idx, "Số lượng giao"]
+                                                target_ngay_old = old_row["Ngày giao hàng"]
+                                                target_sl_old = old_row["Số lượng giao"]
                                                 new_ngay_str = row["Ngày giao hàng"]
-                                                new_sl = row["Số lượng giao"]
+                                                new_sl_str = row["Số lượng giao"]
                                                 new_ghi_chu = row["Ghi chú"]
                                                 
-                                                if new_ngay_str != target_ngay_old or float(new_sl) != float(target_sl_old) or new_ghi_chu != df_edit.loc[idx, "Ghi chú"]:
+                                                if new_ngay_str != target_ngay_old or new_sl_str != target_sl_old or new_ghi_chu != old_row["Ghi chú"]:
                                                     for r in range(ws.max_row, header_row, -1):
                                                         val_po = ws.cell(row=r, column=5).value
                                                         val_ngay = ws.cell(row=r, column=4).value
@@ -223,11 +226,14 @@ with tab_tra_cuu:
                                                                 date_str = val_ngay.strftime('%d/%m/%Y') if isinstance(val_ngay, datetime) else str(val_ngay)
                                                             except: 
                                                                 date_str = str(val_ngay)
+                                                                
+                                                            try: sl_str = str(int(float(val_sl)))
+                                                            except: sl_str = str(val_sl)
 
-                                                            if date_str == target_ngay_old and float(val_sl) == float(target_sl_old):
-                                                                # Ghi ngày (thử parse về datetime, nếu không được thì ghi dạng chuỗi)
+                                                            if date_str == target_ngay_old and sl_str == target_sl_old:
+                                                                # Ghi ngày
                                                                 try:
-                                                                    if new_ngay_str:
+                                                                    if new_ngay_str.strip() != "":
                                                                         new_date = datetime.strptime(new_ngay_str, '%d/%m/%Y')
                                                                         ws.cell(row=r, column=4).value = new_date
                                                                     else:
@@ -235,8 +241,13 @@ with tab_tra_cuu:
                                                                 except:
                                                                     ws.cell(row=r, column=4).value = new_ngay_str
                                                                 
-                                                                ws.cell(row=r, column=8).value = new_sl
-                                                                ws.cell(row=r, column=11).value = new_ghi_chu if new_ghi_chu and new_ghi_chu != "None" else ""
+                                                                # Ghi số lượng
+                                                                try:
+                                                                    ws.cell(row=r, column=8).value = float(new_sl_str)
+                                                                except:
+                                                                    ws.cell(row=r, column=8).value = new_sl_str
+                                                                    
+                                                                ws.cell(row=r, column=11).value = new_ghi_chu if new_ghi_chu != "None" else ""
                                                                 break
                                         
                                         wb.save(file_path)
@@ -248,7 +259,6 @@ with tab_tra_cuu:
                                         st.error(f"Lỗi khi cập nhật: {e}")
                                 st.divider()
 
-                    # Form nhập liệu mới
                     col_tao_po, col_giao_hang = st.columns(2)
                     with col_tao_po:
                         st.markdown("**📝 Tạo PO Mới**")
