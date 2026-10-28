@@ -274,7 +274,11 @@ def append_delivery(
     for k in ["Số  lượng giao", "Số lượng giao"]:
         if k in col_map: col_sl_giao = col_map[k]; break
 
-    col_ngay = col_map.get("Ngày giao hàng")
+    col_ngay = None
+for k in ["Ngày giao hàng", "Ngày"]:
+    if k in col_map:
+        col_ngay = col_map[k]
+        break
     col_don_gia = col_map.get("Đơn giá")
     col_ghi_chu = col_map.get("Ghi chú")
 
