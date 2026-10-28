@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Tra cứu, Nhập liệu & Lọc lịch sử
+PO Tracking App - Bản hoàn thiện (Sửa trực tiếp & Chống lỗi ngày tháng)
 """
 import streamlit as st
 import pandas as pd
@@ -9,6 +9,7 @@ from pathlib import Path
 import data_manager as dm
 import openpyxl
 import os
+import re
 
 # Cấu hình trang
 st.set_page_config(
@@ -24,6 +25,10 @@ DEFAULT_FILE = "data/theo_doi_po.xlsx"
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
+
+# Hàm làm sạch key cho Streamlit (tránh lỗi ký tự đặc biệt)
+def clean_key(text):
+    return re.sub(r'[^a-zA-Z0-9]', '', str(text))
 
 # =========================================================
 # SIDEBAR
@@ -83,7 +88,6 @@ with tab_tra_cuu:
     if isinstance(df_company, pd.DataFrame) and not df_company.empty and "Mã SP" in df_company.columns:
         df_si = df_company[df_company["Phân loại"].astype(str).str.strip() == "SI"].copy()
         
-        # Lọc theo từ khóa tìm kiếm trước
         if search_kw:
             mask = (
                 df_si["Mã SP"].astype(str).str.contains(search_kw, case=False, na=False)
@@ -94,17 +98,14 @@ with tab_tra_cuu:
         if df_si.empty:
             st.info("Không tìm thấy Mã SP nào phù hợp với từ khóa.")
         else:
-            # Tạo danh sách các Mã SP để đưa vào bộ lọc
             list_ma_sp_hien_thi = df_si["Mã SP"].dropna().astype(str).tolist()
             
-            # THÊM BỘ LỌC MULTISELECT
             cac_ma_sp_chon = st.multiselect(
                 "🎯 Hoặc chọn trực tiếp các Mã SP muốn xem (Bỏ trống để xem tất cả):",
                 options=list_ma_sp_hien_thi,
                 default=[]
             )
             
-            # Nếu người dùng có chọn mã cụ thể, lọc lại danh sách
             if cac_ma_sp_chon:
                 df_si = df_si[df_si["Mã SP"].astype(str).isin(cac_ma_sp_chon)]
                 
@@ -120,6 +121,7 @@ with tab_tra_cuu:
                     df_po = df_detail[df_detail["Phân loại"].astype(str).str.strip() == "-"].copy()
                     list_po = df_po["Số PO"].dropna().astype(str).unique().tolist()
                     
+                    # Bảng 1: Thông tin PO
                     if not df_po.empty:
                         st.markdown("**📌 Thông tin Đơn hàng (PO):**")
                         df_giao_all = df_detail[
@@ -132,7 +134,9 @@ with tab_tra_cuu:
                         df_po_display["Số lượng trên ĐH"] = pd.to_numeric(df_po_display["Số lượng trên ĐH"], errors='coerce').fillna(0)
                         df_po_display["SL Đã Giao"] = df_po_display["Số PO"].map(tong_giao_dict).fillna(0)
                         df_po_display["Còn Lại"] = df_po_display["Số lượng trên ĐH"] - df_po_display["SL Đã Giao"]
-                        df_po_display["Ngày giao hàng"] = pd.to_datetime(df_po_display["Ngày giao hàng"]).dt.strftime('%d/%m/%Y')
+                        
+                        # Xử lý ngày tháng an toàn
+                        df_po_display["Ngày giao hàng"] = pd.to_datetime(df_po_display["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y').fillna("Lỗi ngày")
                         
                         st.dataframe(
                             df_po_display[["Số PO", "Ngày giao hàng", "Số lượng trên ĐH", "SL Đã Giao", "Còn Lại", "Đơn giá", "Hoàn thành"]],
@@ -145,78 +149,134 @@ with tab_tra_cuu:
                             }
                         )
                     
-                    st.markdown("**🚚 Lịch sử Giao hàng (Xóa nếu nhập sai):**")
+                    # Bảng 2: Lịch sử giao hàng (Sửa trực tiếp)
+                    st.markdown("**🚚 Lịch sử Giao hàng (Có thể sửa trực tiếp):**")
                     if df_giao_all.empty:
                         st.info("Chưa có đợt giao hàng nào.")
                     else:
                         for po in list_po:
                             df_giao_po = df_giao_all[df_giao_all["Số PO"].astype(str) == str(po)].copy()
                             if not df_giao_po.empty:
-                                with st.container(border=True):
-                                    st.markdown(f"**PO: {po}**")
-                                    df_giao_po["Ngày giao hàng"] = pd.to_datetime(df_giao_po["Ngày giao hàng"]).dt.strftime('%d/%m/%Y')
-                                    df_giao_po.insert(0, "Xóa", False)
-                                    
-                                    edited_df = st.data_editor(
-                                        df_giao_po[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
-                                        column_config={
-                                            "Xóa": st.column_config.CheckboxColumn("Xóa?", default=False),
-                                            "Ngày giao hàng": st.column_config.TextColumn("Ngày giao", disabled=True),
-                                            "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d", disabled=True),
-                                            "Ghi chú": st.column_config.TextColumn("Ghi chú", disabled=True),
-                                        },
-                                        hide_index=True,
-                                        use_container_width=True,
-                                        key=f"editor_{ma_sp}_{po}"
-                                    )
-                                    
-                                    rows_to_delete = edited_df[edited_df["Xóa"] == True]
-                                    if not rows_to_delete.empty:
-                                        if st.button(f"🗑️ Xác nhận xóa {len(rows_to_delete)} dòng của {po}", key=f"del_{ma_sp}_{po}", type="primary"):
-                                            try:
-                                                wb = openpyxl.load_workbook(file_path)
-                                                ws = wb[cong_ty]
-                                                header_row = None
-                                                for i in range(1, 20):
-                                                    for j in range(1, ws.max_column + 1):
-                                                        if ws.cell(row=i, column=j).value and "Số PO" in str(ws.cell(row=i, column=j).value):
-                                                            header_row = i
+                                st.markdown(f"**PO: {po}**")
+                                
+                                df_edit = df_giao_po.copy()
+                                # Chuyển đổi ngày tháng an toàn
+                                df_edit["Ngày giao hàng"] = pd.to_datetime(df_edit["Ngày giao hàng"], errors='coerce')
+                                df_edit["Số lượng giao"] = pd.to_numeric(df_edit["Số lượng giao"], errors='coerce').fillna(0)
+                                df_edit.insert(0, "Xóa", False)
+                                
+                                safe_key = clean_key(f"{ma_sp}_{po}")
+                                
+                                edited_df = st.data_editor(
+                                    df_edit[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
+                                    column_config={
+                                        "Xóa": st.column_config.CheckboxColumn("Xóa?", default=False),
+                                        "Ngày giao hàng": st.column_config.DateColumn("Ngày giao", format="DD/MM/YYYY"),
+                                        "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d"),
+                                        "Ghi chú": st.column_config.TextColumn("Ghi chú"),
+                                    },
+                                    hide_index=True,
+                                    use_container_width=True,
+                                    key=f"editor_{safe_key}"
+                                )
+                                
+                                if st.button(f"💾 Lưu thay đổi cho PO {po}", key=f"btn_update_{safe_key}", type="primary"):
+                                    try:
+                                        wb = openpyxl.load_workbook(file_path)
+                                        ws = wb[cong_ty]
+                                        
+                                        header_row = None
+                                        for i in range(1, 20):
+                                            for j in range(1, ws.max_column + 1):
+                                                if ws.cell(row=i, column=j).value and "Số PO" in str(ws.cell(row=i, column=j).value):
+                                                    header_row = i
+                                                    break
+                                            if header_row: break
+                                        
+                                        for idx, row in edited_df.iloc[::-1].iterrows():
+                                            if row["Xóa"]:
+                                                target_ngay_old = df_edit.loc[idx, "Ngày giao hàng"]
+                                                target_sl_old = df_edit.loc[idx, "Số lượng giao"]
+                                                for r in range(ws.max_row, header_row, -1):
+                                                    val_po = ws.cell(row=r, column=5).value
+                                                    val_ngay = ws.cell(row=r, column=4).value
+                                                    val_sl = ws.cell(row=r, column=8).value
+                                                    if str(val_po) == str(po) and pd.notna(val_ngay) and pd.notna(val_sl):
+                                                        try: 
+                                                            date_str = val_ngay.strftime('%d/%m/%Y') if isinstance(val_ngay, datetime) else str(val_ngay)
+                                                        except: 
+                                                            date_str = str(val_ngay)
+                                                        
+                                                        try:
+                                                            target_ngay_str = target_ngay_old.strftime('%d/%m/%Y') if pd.notna(target_ngay_old) else ""
+                                                        except:
+                                                            target_ngay_str = ""
+
+                                                        if date_str == target_ngay_str and float(val_sl) == float(target_sl_old):
+                                                            ws.delete_rows(r, 1)
                                                             break
-                                                    if header_row: break
+                                            else:
+                                                target_ngay_old = df_edit.loc[idx, "Ngày giao hàng"]
+                                                target_sl_old = df_edit.loc[idx, "Số lượng giao"]
+                                                new_ngay = row["Ngày giao hàng"]
+                                                new_sl = row["Số lượng giao"]
+                                                new_ghi_chu = row["Ghi chú"]
                                                 
-                                                for idx, row in rows_to_delete.iloc[::-1].iterrows():
-                                                    target_ngay = row["Ngày giao hàng"]
-                                                    target_sl = row["Số lượng giao"]
+                                                is_changed = False
+                                                try:
+                                                    if pd.notna(new_ngay) and pd.notna(target_ngay_old):
+                                                        if new_ngay.date() != target_ngay_old.date(): is_changed = True
+                                                    elif pd.isna(new_ngay) != pd.isna(target_ngay_old):
+                                                        is_changed = True
+                                                except:
+                                                    is_changed = True
+                                                    
+                                                if float(new_sl) != float(target_sl_old) or new_ghi_chu != df_edit.loc[idx, "Ghi chú"]:
+                                                    is_changed = True
+                                                
+                                                if is_changed:
                                                     for r in range(ws.max_row, header_row, -1):
                                                         val_po = ws.cell(row=r, column=5).value
                                                         val_ngay = ws.cell(row=r, column=4).value
                                                         val_sl = ws.cell(row=r, column=8).value
                                                         if str(val_po) == str(po) and pd.notna(val_ngay) and pd.notna(val_sl):
-                                                            try:
-                                                                date_str = val_ngay.strftime('%d/%m/%Y')
-                                                            except:
+                                                            try: 
+                                                                date_str = val_ngay.strftime('%d/%m/%Y') if isinstance(val_ngay, datetime) else str(val_ngay)
+                                                            except: 
                                                                 date_str = str(val_ngay)
-                                                            if date_str == target_ngay and float(val_sl) == float(target_sl):
-                                                                ws.delete_rows(r, 1)
-                                                                break
-                                                wb.save(file_path)
-                                                st.success("Đã xóa thành công!")
-                                                st.session_state.pop("all_sheets", None)
-                                                st.session_state.pop("visible_sheets", None)
-                                                st.rerun()
-                                            except Exception as e:
-                                                st.error(f"Lỗi khi xóa: {e}")
+                                                            
+                                                            try:
+                                                                target_ngay_str = target_ngay_old.strftime('%d/%m/%Y') if pd.notna(target_ngay_old) else ""
+                                                            except:
+                                                                target_ngay_str = ""
 
-                    st.divider()
-                    
+                                                            if date_str == target_ngay_str and float(val_sl) == float(target_sl_old):
+                                                                if pd.notna(new_ngay):
+                                                                    ws.cell(row=r, column=4).value = new_ngay
+                                                                else:
+                                                                    ws.cell(row=r, column=4).value = None
+                                                                ws.cell(row=r, column=8).value = new_sl
+                                                                ws.cell(row=r, column=11).value = new_ghi_chu if new_ghi_chu and new_ghi_chu != "None" else ""
+                                                                break
+                                        
+                                        wb.save(file_path)
+                                        st.success(f"Đã cập nhật thay đổi cho PO {po}!")
+                                        st.session_state.pop("all_sheets", None)
+                                        st.session_state.pop("visible_sheets", None)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Lỗi khi cập nhật: {e}")
+                                st.divider()
+
+                    # Form nhập liệu mới
                     col_tao_po, col_giao_hang = st.columns(2)
                     with col_tao_po:
                         st.markdown("**📝 Tạo PO Mới**")
-                        with st.form(key=f"form_po_{ma_sp}"):
-                            new_po = st.text_input("Nhập Số PO mới", placeholder="VD: DH26.11.001", key=f"newpo_{ma_sp}")
-                            ngay_po = st.date_input("Ngày PO", value=date.today(), key=f"ngaypo_{ma_sp}", format="DD/MM/YYYY")
-                            sl_dat = st.number_input("Số lượng khách đặt", min_value=0.0, step=100.0, key=f"sldat_{ma_sp}")
-                            don_gia = st.number_input("Đơn giá", min_value=0.0, step=100.0, key=f"gia_{ma_sp}")
+                        with st.form(key=f"form_po_{clean_key(ma_sp)}"):
+                            new_po = st.text_input("Nhập Số PO mới", placeholder="VD: DH26.11.001", key=f"newpo_{clean_key(ma_sp)}")
+                            ngay_po = st.date_input("Ngày PO", value=date.today(), key=f"ngaypo_{clean_key(ma_sp)}", format="DD/MM/YYYY")
+                            sl_dat = st.number_input("Số lượng khách đặt", min_value=0.0, step=100.0, key=f"sldat_{clean_key(ma_sp)}")
+                            don_gia = st.number_input("Đơn giá", min_value=0.0, step=100.0, key=f"gia_{clean_key(ma_sp)}")
                             btn_tao_po = st.form_submit_button("💾 Lưu PO Mới", use_container_width=True)
                             
                             if btn_tao_po:
@@ -245,11 +305,11 @@ with tab_tra_cuu:
                         if not list_po:
                             st.info("Chưa có PO nào để giao. Vui lòng tạo PO mới ở cột bên trái.")
                         else:
-                            with st.form(key=f"form_giao_{ma_sp}"):
-                                po_chon = st.selectbox("Chọn PO cần giao", list_po, key=f"chonpo_{ma_sp}")
-                                ngay_giao = st.date_input("Ngày giao hàng", value=date.today(), key=f"ngaygiao_{ma_sp}", format="DD/MM/YYYY")
-                                so_luong_giao = st.number_input("Số lượng giao thực tế", min_value=0.0, step=1.0, key=f"slgiao_{ma_sp}")
-                                ghi_chu = st.text_input("Ghi chú", key=f"ghichu_{ma_sp}")
+                            with st.form(key=f"form_giao_{clean_key(ma_sp)}"):
+                                po_chon = st.selectbox("Chọn PO cần giao", list_po, key=f"chonpo_{clean_key(ma_sp)}")
+                                ngay_giao = st.date_input("Ngày giao hàng", value=date.today(), key=f"ngaygiao_{clean_key(ma_sp)}", format="DD/MM/YYYY")
+                                so_luong_giao = st.number_input("Số lượng giao thực tế", min_value=0.0, step=1.0, key=f"slgiao_{clean_key(ma_sp)}")
+                                ghi_chu = st.text_input("Ghi chú", key=f"ghichu_{clean_key(ma_sp)}")
                                 btn_giao_hang = st.form_submit_button("💾 Lưu Giao Hàng", use_container_width=True)
                                 
                                 if btn_giao_hang:
