@@ -9,6 +9,7 @@ from pathlib import Path
 import data_manager as dm
 import openpyxl
 import os
+import re
 
 # Cấu hình trang
 st.set_page_config(
@@ -24,6 +25,13 @@ DEFAULT_FILE = "data/theo_doi_po.xlsx"
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
+
+# =========================================================
+# HÀM LÀM SẠCH KEY (QUAN TRỌNG ĐỂ SỬA LỖI)
+# =========================================================
+def clean_key(text):
+    """Chuyển chuỗi thành dạng an toàn để làm key cho Streamlit (chỉ giữ chữ và số)"""
+    return re.sub(r'[^a-zA-Z0-9]', '', str(text))
 
 # =========================================================
 # SIDEBAR
@@ -157,7 +165,9 @@ with tab_tra_cuu:
                                 df_edit["Số lượng giao"] = pd.to_numeric(df_edit["Số lượng giao"], errors='coerce').fillna(0)
                                 df_edit.insert(0, "Xóa", False)
                                 
-                                # Bảng cho phép sửa
+                                # Sử dụng clean_key để làm sạch key
+                                safe_key = clean_key(f"{ma_sp}_{po}")
+                                
                                 edited_df = st.data_editor(
                                     df_edit[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
                                     column_config={
@@ -168,11 +178,11 @@ with tab_tra_cuu:
                                     },
                                     hide_index=True,
                                     use_container_width=True,
-                                    key=f"editor_{ma_sp}_{po}"
+                                    key=f"editor_{safe_key}"
                                 )
                                 
                                 # Nút lưu cho từng PO
-                                if st.button(f"💾 Lưu thay đổi cho PO {po}", key=f"btn_update_{ma_sp}_{po}"):
+                                if st.button(f"💾 Lưu thay đổi cho PO {po}", key=f"btn_update_{safe_key}"):
                                     try:
                                         wb = openpyxl.load_workbook(file_path)
                                         ws = wb[cong_ty]
@@ -237,11 +247,11 @@ with tab_tra_cuu:
                     col_tao_po, col_giao_hang = st.columns(2)
                     with col_tao_po:
                         st.markdown("**📝 Tạo PO Mới**")
-                        with st.form(key=f"form_po_{ma_sp}"):
-                            new_po = st.text_input("Nhập Số PO mới", placeholder="VD: DH26.11.001", key=f"newpo_{ma_sp}")
-                            ngay_po = st.date_input("Ngày PO", value=date.today(), key=f"ngaypo_{ma_sp}", format="DD/MM/YYYY")
-                            sl_dat = st.number_input("Số lượng khách đặt", min_value=0.0, step=100.0, key=f"sldat_{ma_sp}")
-                            don_gia = st.number_input("Đơn giá", min_value=0.0, step=100.0, key=f"gia_{ma_sp}")
+                        with st.form(key=f"form_po_{clean_key(ma_sp)}"):
+                            new_po = st.text_input("Nhập Số PO mới", placeholder="VD: DH26.11.001", key=f"newpo_{clean_key(ma_sp)}")
+                            ngay_po = st.date_input("Ngày PO", value=date.today(), key=f"ngaypo_{clean_key(ma_sp)}", format="DD/MM/YYYY")
+                            sl_dat = st.number_input("Số lượng khách đặt", min_value=0.0, step=100.0, key=f"sldat_{clean_key(ma_sp)}")
+                            don_gia = st.number_input("Đơn giá", min_value=0.0, step=100.0, key=f"gia_{clean_key(ma_sp)}")
                             btn_tao_po = st.form_submit_button("💾 Lưu PO Mới", use_container_width=True)
                             
                             if btn_tao_po:
@@ -270,11 +280,11 @@ with tab_tra_cuu:
                         if not list_po:
                             st.info("Chưa có PO nào để giao. Vui lòng tạo PO mới ở cột bên trái.")
                         else:
-                            with st.form(key=f"form_giao_{ma_sp}"):
-                                po_chon = st.selectbox("Chọn PO cần giao", list_po, key=f"chonpo_{ma_sp}")
-                                ngay_giao = st.date_input("Ngày giao hàng", value=date.today(), key=f"ngaygiao_{ma_sp}", format="DD/MM/YYYY")
-                                so_luong_giao = st.number_input("Số lượng giao thực tế", min_value=0.0, step=1.0, key=f"slgiao_{ma_sp}")
-                                ghi_chu = st.text_input("Ghi chú", key=f"ghichu_{ma_sp}")
+                            with st.form(key=f"form_giao_{clean_key(ma_sp)}"):
+                                po_chon = st.selectbox("Chọn PO cần giao", list_po, key=f"chonpo_{clean_key(ma_sp)}")
+                                ngay_giao = st.date_input("Ngày giao hàng", value=date.today(), key=f"ngaygiao_{clean_key(ma_sp)}", format="DD/MM/YYYY")
+                                so_luong_giao = st.number_input("Số lượng giao thực tế", min_value=0.0, step=1.0, key=f"slgiao_{clean_key(ma_sp)}")
+                                ghi_chu = st.text_input("Ghi chú", key=f"ghichu_{clean_key(ma_sp)}")
                                 btn_giao_hang = st.form_submit_button("💾 Lưu Giao Hàng", use_container_width=True)
                                 
                                 if btn_giao_hang:
