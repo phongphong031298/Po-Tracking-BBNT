@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Bản hoàn thiện (Sửa trực tiếp & Chống lỗi ngày tháng)
+PO Tracking App - Bản hoàn thiện
 """
 import streamlit as st
 import pandas as pd
@@ -167,11 +167,12 @@ with tab_tra_cuu:
                                 
                                 safe_key = clean_key(f"{ma_sp}_{po}")
                                 
+                                # ĐÃ XÓA FORMAT ĐỂ TRÁNH LỖI API CLOUD
                                 edited_df = st.data_editor(
                                     df_edit[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
                                     column_config={
                                         "Xóa": st.column_config.CheckboxColumn("Xóa?", default=False),
-                                        "Ngày giao hàng": st.column_config.DateColumn("Ngày giao", format="DD/MM/YYYY"),
+                                        "Ngày giao hàng": st.column_config.DateColumn("Ngày giao"),
                                         "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d"),
                                         "Ghi chú": st.column_config.TextColumn("Ghi chú"),
                                     },
