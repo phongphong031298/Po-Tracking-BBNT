@@ -20,7 +20,7 @@ st.set_page_config(
 # =========================================================
 # TỰ ĐỘNG TÌM FILE EXCEL MẶC ĐỊNH
 # =========================================================
-DEFAULT_FILE = "Theo dõi PO - BBNT.xlsx"
+DEFAULT_FILE = "data/theo_doi_po.xlsx"
 if not os.path.exists(DEFAULT_FILE):
     if os.path.exists("data/Theo dõi PO - BBNT.xlsx"):
         DEFAULT_FILE = "data/Theo dõi PO - BBNT.xlsx"
