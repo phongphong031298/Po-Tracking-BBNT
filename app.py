@@ -1,6 +1,6 @@
 """
 app.py
-PO Tracking App - Bản hoàn thiện
+PO Tracking App - Bản fix lỗi hoàn toàn
 """
 import streamlit as st
 import pandas as pd
@@ -18,15 +18,11 @@ st.set_page_config(
     layout="wide",
 )
 
-# =========================================================
-# CẤU HÌNH FILE MẶC ĐỊNH
-# =========================================================
 DEFAULT_FILE = "data/theo_doi_po.xlsx"
 
 if "file_path" not in st.session_state:
     st.session_state.file_path = DEFAULT_FILE
 
-# Hàm làm sạch key cho Streamlit (tránh lỗi ký tự đặc biệt)
 def clean_key(text):
     return re.sub(r'[^a-zA-Z0-9]', '', str(text))
 
@@ -121,7 +117,6 @@ with tab_tra_cuu:
                     df_po = df_detail[df_detail["Phân loại"].astype(str).str.strip() == "-"].copy()
                     list_po = df_po["Số PO"].dropna().astype(str).unique().tolist()
                     
-                    # Bảng 1: Thông tin PO
                     if not df_po.empty:
                         st.markdown("**📌 Thông tin Đơn hàng (PO):**")
                         df_giao_all = df_detail[
@@ -134,8 +129,6 @@ with tab_tra_cuu:
                         df_po_display["Số lượng trên ĐH"] = pd.to_numeric(df_po_display["Số lượng trên ĐH"], errors='coerce').fillna(0)
                         df_po_display["SL Đã Giao"] = df_po_display["Số PO"].map(tong_giao_dict).fillna(0)
                         df_po_display["Còn Lại"] = df_po_display["Số lượng trên ĐH"] - df_po_display["SL Đã Giao"]
-                        
-                        # Xử lý ngày tháng an toàn
                         df_po_display["Ngày giao hàng"] = pd.to_datetime(df_po_display["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y').fillna("Lỗi ngày")
                         
                         st.dataframe(
@@ -149,7 +142,6 @@ with tab_tra_cuu:
                             }
                         )
                     
-                    # Bảng 2: Lịch sử giao hàng (Sửa trực tiếp)
                     st.markdown("**🚚 Lịch sử Giao hàng (Có thể sửa trực tiếp):**")
                     if df_giao_all.empty:
                         st.info("Chưa có đợt giao hàng nào.")
@@ -160,19 +152,22 @@ with tab_tra_cuu:
                                 st.markdown(f"**PO: {po}**")
                                 
                                 df_edit = df_giao_po.copy()
-                                # Chuyển đổi ngày tháng an toàn
-                                df_edit["Ngày giao hàng"] = pd.to_datetime(df_edit["Ngày giao hàng"], errors='coerce')
+                                
+                                # CHỐNG LỖI: Chuyển ngày thành chuỗi, nếu lỗi thì để trống
+                                df_edit["Ngày giao hàng"] = pd.to_datetime(df_edit["Ngày giao hàng"], errors='coerce').dt.strftime('%d/%m/%Y')
+                                df_edit["Ngày giao hàng"] = df_edit["Ngày giao hàng"].fillna("") 
+                                
                                 df_edit["Số lượng giao"] = pd.to_numeric(df_edit["Số lượng giao"], errors='coerce').fillna(0)
                                 df_edit.insert(0, "Xóa", False)
                                 
                                 safe_key = clean_key(f"{ma_sp}_{po}")
                                 
-                                # ĐÃ XÓA FORMAT ĐỂ TRÁNH LỖI API CLOUD
+                                # CHUYỂN VỀ TEXT ĐỂ TRÁNH LỖI API CỦA STREAMLIT CLOUD
                                 edited_df = st.data_editor(
                                     df_edit[["Xóa", "Ngày giao hàng", "Số lượng giao", "Ghi chú"]],
                                     column_config={
                                         "Xóa": st.column_config.CheckboxColumn("Xóa?", default=False),
-                                        "Ngày giao hàng": st.column_config.DateColumn("Ngày giao"),
+                                        "Ngày giao hàng": st.column_config.TextColumn("Ngày giao (DD/MM/YYYY)"),
                                         "Số lượng giao": st.column_config.NumberColumn("SL Giao", format="%d"),
                                         "Ghi chú": st.column_config.TextColumn("Ghi chú"),
                                     },
@@ -208,34 +203,17 @@ with tab_tra_cuu:
                                                         except: 
                                                             date_str = str(val_ngay)
                                                         
-                                                        try:
-                                                            target_ngay_str = target_ngay_old.strftime('%d/%m/%Y') if pd.notna(target_ngay_old) else ""
-                                                        except:
-                                                            target_ngay_str = ""
-
-                                                        if date_str == target_ngay_str and float(val_sl) == float(target_sl_old):
+                                                        if date_str == target_ngay_old and float(val_sl) == float(target_sl_old):
                                                             ws.delete_rows(r, 1)
                                                             break
                                             else:
                                                 target_ngay_old = df_edit.loc[idx, "Ngày giao hàng"]
                                                 target_sl_old = df_edit.loc[idx, "Số lượng giao"]
-                                                new_ngay = row["Ngày giao hàng"]
+                                                new_ngay_str = row["Ngày giao hàng"]
                                                 new_sl = row["Số lượng giao"]
                                                 new_ghi_chu = row["Ghi chú"]
                                                 
-                                                is_changed = False
-                                                try:
-                                                    if pd.notna(new_ngay) and pd.notna(target_ngay_old):
-                                                        if new_ngay.date() != target_ngay_old.date(): is_changed = True
-                                                    elif pd.isna(new_ngay) != pd.isna(target_ngay_old):
-                                                        is_changed = True
-                                                except:
-                                                    is_changed = True
-                                                    
-                                                if float(new_sl) != float(target_sl_old) or new_ghi_chu != df_edit.loc[idx, "Ghi chú"]:
-                                                    is_changed = True
-                                                
-                                                if is_changed:
+                                                if new_ngay_str != target_ngay_old or float(new_sl) != float(target_sl_old) or new_ghi_chu != df_edit.loc[idx, "Ghi chú"]:
                                                     for r in range(ws.max_row, header_row, -1):
                                                         val_po = ws.cell(row=r, column=5).value
                                                         val_ngay = ws.cell(row=r, column=4).value
@@ -245,17 +223,18 @@ with tab_tra_cuu:
                                                                 date_str = val_ngay.strftime('%d/%m/%Y') if isinstance(val_ngay, datetime) else str(val_ngay)
                                                             except: 
                                                                 date_str = str(val_ngay)
-                                                            
-                                                            try:
-                                                                target_ngay_str = target_ngay_old.strftime('%d/%m/%Y') if pd.notna(target_ngay_old) else ""
-                                                            except:
-                                                                target_ngay_str = ""
 
-                                                            if date_str == target_ngay_str and float(val_sl) == float(target_sl_old):
-                                                                if pd.notna(new_ngay):
-                                                                    ws.cell(row=r, column=4).value = new_ngay
-                                                                else:
-                                                                    ws.cell(row=r, column=4).value = None
+                                                            if date_str == target_ngay_old and float(val_sl) == float(target_sl_old):
+                                                                # Ghi ngày (thử parse về datetime, nếu không được thì ghi dạng chuỗi)
+                                                                try:
+                                                                    if new_ngay_str:
+                                                                        new_date = datetime.strptime(new_ngay_str, '%d/%m/%Y')
+                                                                        ws.cell(row=r, column=4).value = new_date
+                                                                    else:
+                                                                        ws.cell(row=r, column=4).value = None
+                                                                except:
+                                                                    ws.cell(row=r, column=4).value = new_ngay_str
+                                                                
                                                                 ws.cell(row=r, column=8).value = new_sl
                                                                 ws.cell(row=r, column=11).value = new_ghi_chu if new_ghi_chu and new_ghi_chu != "None" else ""
                                                                 break
